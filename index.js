@@ -37,6 +37,7 @@ app.post('/webhook', async (req, res) => {
     console.log('Inbound webhook payload:', JSON.stringify(event, null, 2));
 
     const emailId = event.data?.email_id;
+    const messageId = event.data?.message_id || '';
     const subject = event.data?.subject || '(no subject)';
     const from = event.data?.from || '';
     const to = event.data?.to || [];
@@ -48,6 +49,7 @@ app.post('/webhook', async (req, res) => {
 
     const emailRecord = {
       id: emailId,
+      messageId,
       subject,
       from,
       to,
@@ -153,7 +155,7 @@ app.get('/', (req, res) => {
     </div>
   </div>
   <script>
-    const emails = ${JSON.stringify(receivedEmails.map(e => ({ id: e.id, subject: e.subject, from: e.from, to: e.to, receivedAt: e.receivedAt, forwarded: e.forwarded, html: e.html, text: e.text })))};
+    const emails = ${JSON.stringify(receivedEmails.map(e => ({ id: e.id, messageId: e.messageId, subject: e.subject, from: e.from, to: e.to, receivedAt: e.receivedAt, forwarded: e.forwarded, html: e.html, text: e.text })))};
     function escHtml(s) {
       return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
@@ -170,11 +172,17 @@ app.get('/', (req, res) => {
           <strong>To:</strong> \${escHtml((e.to||[]).join(', '))}<br/>
           <strong>Subject:</strong> \${escHtml(e.subject)}<br/>
           <strong>Date:</strong> \${new Date(e.receivedAt).toLocaleString()}<br/>
-          <strong>Forwarded:</strong> \${e.forwarded ? '<span class="badge badge-fwd">Yes ✅</span>' : '<span class="badge badge-skip">No</span>'}
+          <strong>Forwarded:</strong> \${e.forwarded ? '<span class="badge badge-fwd">Yes ✅</span>' : '<span class="badge badge-skip">No</span>'}<br/>
+          <strong>Email ID:</strong> <code style="font-size:0.75rem">\${escHtml(e.id||'')}</code>
         </div>
         \${e.html
           ? \`<iframe id="preview-frame" srcdoc="\${escHtml(e.html)}" sandbox="allow-same-origin"></iframe>\`
-          : \`<pre style="white-space:pre-wrap;font-size:0.85rem;color:#333">\${escHtml(e.text||'(no content)')}</pre>\`
+          : e.text
+            ? \`<pre style="white-space:pre-wrap;font-size:0.85rem;color:#333">\${escHtml(e.text)}</pre>\`
+            : \`<div style="padding:16px;color:#999;font-size:0.85rem">
+                (no content — body not provided by Resend for this email)<br/><br/>
+                <a href="https://resend.com/inbound" target="_blank" rel="noopener">View in Resend dashboard →</a>
+               </div>\`
         }
       \`;
     }
