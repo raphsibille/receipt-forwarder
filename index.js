@@ -34,6 +34,8 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    console.log('Inbound webhook payload:', JSON.stringify(event, null, 2));
+
     const emailId = event.data?.email_id;
     const subject = event.data?.subject || '(no subject)';
     const from = event.data?.from || '';
