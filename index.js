@@ -40,16 +40,9 @@ app.post('/webhook', async (req, res) => {
     const to = event.data?.to || [];
     const receivedAt = event.data?.created_at || new Date().toISOString();
 
-    // Fetch full email content using the Resend API
-    let html = '';
-    let text = '';
-    try {
-      const full = await resend.emails.get(emailId);
-      html = full.data?.html || '';
-      text = full.data?.text || '';
-    } catch (e) {
-      console.warn('Could not fetch full email body:', e.message);
-    }
+    // Extract email body from the webhook payload (inbound emails include body in the event)
+    let html = event.data?.html || '';
+    let text = event.data?.text || '';
 
     const emailRecord = {
       id: emailId,
