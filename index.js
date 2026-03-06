@@ -1,3 +1,6 @@
+import { setDefaultResultOrder } from 'dns';
+setDefaultResultOrder('ipv4first'); // Railway has broken IPv6; force all DNS to prefer IPv4
+
 import express from 'express';
 import nodemailer from 'nodemailer';
 
