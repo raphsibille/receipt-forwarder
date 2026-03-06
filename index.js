@@ -1,15 +1,20 @@
-import { setDefaultResultOrder } from 'dns';
-setDefaultResultOrder('ipv4first'); // Railway has broken IPv6; force all DNS to prefer IPv4
-
+import { resolve4 } from 'dns/promises';
 import express from 'express';
 import nodemailer from 'nodemailer';
 
+// Explicitly resolve smtp.gmail.com to an IPv4 address (A record only).
+// Railway's containers cannot reach IPv6 destinations, and all other DNS
+// ordering hints (setDefaultResultOrder, family:4) are ignored at the
+// socket level. Using the raw IPv4 address as the host is the only
+// reliable workaround.
+const [smtpHost] = await resolve4('smtp.gmail.com');
+
 const app = express();
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: smtpHost,
   port: 587,
   secure: false,
-  family: 4, // Force IPv4 — Railway cannot reach smtp.gmail.com via IPv6
+  tls: { servername: 'smtp.gmail.com' }, // required for cert validation when using IP
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
