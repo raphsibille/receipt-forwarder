@@ -65,6 +65,12 @@ app.post('/webhook', async (req, res) => {
       forwarded: false,
     };
 
+    // Deduplicate: ignore if we've already processed this email_id
+    if (receivedEmails.some(e => e.id === emailId)) {
+      console.log(`⚠️  Duplicate webhook for email_id ${emailId} — ignored`);
+      return res.status(200).json({ ok: true });
+    }
+
     // Store email (cap at MAX_EMAILS)
     receivedEmails.unshift(emailRecord);
     if (receivedEmails.length > MAX_EMAILS) receivedEmails.pop();
