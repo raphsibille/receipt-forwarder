@@ -12,8 +12,8 @@ const [smtpHost] = await resolve4('smtp.gmail.com');
 const app = express();
 const transporter = nodemailer.createTransport({
   host: smtpHost,
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true, // SSL on 465
   tls: { servername: 'smtp.gmail.com' }, // required for cert validation when using IP
   auth: {
     user: process.env.SMTP_USER,
