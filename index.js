@@ -1,8 +1,16 @@
 import express from 'express';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
 const app = express();
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 // In-memory store for received emails (persists while server is running)
 const receivedEmails = [];
@@ -63,25 +71,25 @@ app.post('/webhook', async (req, res) => {
 
     // Forward if it looks like a receipt/invoice
     const REVOLUT_EMAIL = process.env.REVOLUT_EMAIL;
-    const FROM_EMAIL = process.env.FROM_EMAIL; // e.g. receipts@yourdomain.com
+    const SMTP_USER = process.env.SMTP_USER;
 
-    if (REVOLUT_EMAIL && FROM_EMAIL && isReceiptOrInvoice(emailRecord)) {
+    if (REVOLUT_EMAIL && SMTP_USER && isReceiptOrInvoice(emailRecord)) {
       try {
-        await resend.emails.send({
-          from: `Receipt Forwarder <${FROM_EMAIL}>`,
-          to: [REVOLUT_EMAIL],
+        await transporter.sendMail({
+          from: SMTP_USER,
+          to: REVOLUT_EMAIL,
           subject: `FWD: ${subject}`,
           html: html || `<pre>${text}</pre>`,
           text: text,
-          reply_to: from,
+          replyTo: from,
         });
         emailRecord.forwarded = true;
         console.log(`✅ Forwarded: "${subject}" to ${REVOLUT_EMAIL}`);
       } catch (e) {
         console.error('Failed to forward email:', e.message);
       }
-    } else if (!REVOLUT_EMAIL || !FROM_EMAIL) {
-      console.warn('REVOLUT_EMAIL or FROM_EMAIL not set — forwarding skipped');
+    } else if (!REVOLUT_EMAIL || !SMTP_USER) {
+      console.warn('REVOLUT_EMAIL or SMTP_USER not set — forwarding skipped');
     } else {
       console.log(`⏭️  Skipped (not a receipt): "${subject}"`);
     }
