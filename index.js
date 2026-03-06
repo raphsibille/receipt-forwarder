@@ -212,5 +212,33 @@ function escHtml(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ─── SMTP test endpoint ───────────────────────────────────────────────────────
+app.get('/test-smtp', async (req, res) => {
+  const SMTP_USER = process.env.SMTP_USER;
+  const SMTP_PASS = process.env.SMTP_PASS;
+  const REVOLUT_EMAIL = process.env.REVOLUT_EMAIL;
+
+  if (!SMTP_USER || !SMTP_PASS) {
+    return res.status(500).json({ error: 'SMTP_USER or SMTP_PASS not set' });
+  }
+
+  try {
+    await transporter.verify();
+    res.json({
+      ok: true,
+      smtp_user: SMTP_USER,
+      revolut_email: REVOLUT_EMAIL || '(not set)',
+      message: 'SMTP connection verified successfully',
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, smtp_user: SMTP_USER, error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Receipt Forwarder running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Receipt Forwarder running on port ${PORT}`);
+  console.log(`   SMTP_USER:      ${process.env.SMTP_USER || '(not set)'}`);
+  console.log(`   REVOLUT_EMAIL:  ${process.env.REVOLUT_EMAIL || '(not set)'}`);
+  console.log(`   SMTP_PASS:      ${process.env.SMTP_PASS ? '(set)' : '(not set)'}`);
+});
