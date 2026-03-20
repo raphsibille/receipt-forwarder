@@ -1,25 +1,6 @@
-import { resolve4 } from 'dns/promises';
 import express from 'express';
-import nodemailer from 'nodemailer';
-
-// Explicitly resolve smtp.gmail.com to an IPv4 address (A record only).
-// Railway's containers cannot reach IPv6 destinations, and all other DNS
-// ordering hints (setDefaultResultOrder, family:4) are ignored at the
-// socket level. Using the raw IPv4 address as the host is the only
-// reliable workaround.
-const [smtpHost] = await resolve4('smtp.gmail.com');
 
 const app = express();
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: 465,
-  secure: true, // SSL on 465
-  tls: { servername: 'smtp.gmail.com' }, // required for cert validation when using IP
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 // In-memory store for received emails (persists while server is running)
 const receivedEmails = [];
@@ -90,14 +71,22 @@ app.post('/webhook', async (req, res) => {
 
     if (REVOLUT_EMAIL && SMTP_USER && isReceiptOrInvoice(emailRecord)) {
       try {
-        await transporter.sendMail({
-          from: SMTP_USER,
-          to: REVOLUT_EMAIL,
-          subject: `FWD: ${subject}`,
-          html: html || `<pre>${text}</pre>`,
-          text: text,
-          replyTo: from,
+        const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'api-key': process.env.BREVO_API_KEY,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            sender: { email: SMTP_USER },
+            to: [{ email: REVOLUT_EMAIL }],
+            subject: `FWD: ${subject}`,
+            htmlContent: html || `<pre>${text}</pre>`,
+            textContent: text,
+            replyTo: { email: from },
+          }),
         });
+        if (!brevoRes.ok) throw new Error(await brevoRes.text());
         emailRecord.forwarded = true;
         console.log(`✅ Forwarded: "${subject}" to ${REVOLUT_EMAIL}`);
       } catch (e) {
@@ -221,26 +210,32 @@ function escHtml(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ─── SMTP test endpoint ───────────────────────────────────────────────────────
-app.get('/test-smtp', async (req, res) => {
+// ─── Email test endpoint ──────────────────────────────────────────────────────
+app.get('/test-email', async (req, res) => {
+  const BREVO_API_KEY = process.env.BREVO_API_KEY;
   const SMTP_USER = process.env.SMTP_USER;
-  const SMTP_PASS = process.env.SMTP_PASS;
   const REVOLUT_EMAIL = process.env.REVOLUT_EMAIL;
 
-  if (!SMTP_USER || !SMTP_PASS) {
-    return res.status(500).json({ error: 'SMTP_USER or SMTP_PASS not set' });
+  if (!BREVO_API_KEY || !SMTP_USER) {
+    return res.status(500).json({ error: 'BREVO_API_KEY or SMTP_USER not set' });
   }
 
   try {
-    await transporter.verify();
-    res.json({
-      ok: true,
-      smtp_user: SMTP_USER,
-      revolut_email: REVOLUT_EMAIL || '(not set)',
-      message: 'SMTP connection verified successfully',
+    const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sender: { email: SMTP_USER },
+        to: [{ email: SMTP_USER }], // send test to self
+        subject: 'Receipt Forwarder — test',
+        textContent: 'Brevo outbound is working.',
+      }),
     });
+    const body = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(body));
+    res.json({ ok: true, from: SMTP_USER, revolut_email: REVOLUT_EMAIL || '(not set)', brevo: body });
   } catch (e) {
-    res.status(500).json({ ok: false, smtp_user: SMTP_USER, error: e.message });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
