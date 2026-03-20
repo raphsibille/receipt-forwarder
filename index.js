@@ -39,9 +39,15 @@ app.post('/webhook', async (req, res) => {
     const to = event.data?.to || [];
     const receivedAt = event.data?.created_at || new Date().toISOString();
 
-    // Extract email body from the webhook payload (inbound emails include body in the event)
+    // Extract email body and attachments from the webhook payload
     let html = event.data?.html || '';
     let text = event.data?.text || '';
+    // Resend provides attachments as [{ filename, content (base64), content_type }]
+    const attachments = (event.data?.attachments || []).map(a => ({
+      filename: a.filename,
+      content: a.content,      // base64
+      contentType: a.content_type,
+    }));
 
     const emailRecord = {
       id: emailId,
@@ -52,6 +58,7 @@ app.post('/webhook', async (req, res) => {
       receivedAt,
       html,
       text,
+      attachments,
       forwarded: false,
     };
 
@@ -84,6 +91,12 @@ app.post('/webhook', async (req, res) => {
             htmlContent: html || `<pre>${text}</pre>`,
             ...(text && { textContent: text }),
             replyTo: { email: from },
+            ...(attachments.length > 0 && {
+              attachment: attachments.map(a => ({
+                name: a.filename,
+                content: a.content, // base64, as Brevo expects
+              })),
+            }),
           }),
         });
         if (!brevoRes.ok) throw new Error(await brevoRes.text());
