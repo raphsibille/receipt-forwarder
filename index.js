@@ -82,7 +82,7 @@ app.post('/webhook', async (req, res) => {
             to: [{ email: REVOLUT_EMAIL }],
             subject: `FWD: ${subject}`,
             htmlContent: html || `<pre>${text}</pre>`,
-            textContent: text,
+            ...(text && { textContent: text }),
             replyTo: { email: from },
           }),
         });
