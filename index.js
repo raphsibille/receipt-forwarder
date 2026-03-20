@@ -91,11 +91,10 @@ app.post('/webhook', async (req, res) => {
             htmlContent: html || `<pre>${text}</pre>`,
             ...(text && { textContent: text }),
             replyTo: { email: from },
-            ...(attachments.length > 0 && {
-              attachment: attachments.map(a => ({
-                name: a.filename,
-                content: a.content, // base64, as Brevo expects
-              })),
+            ...(attachments.some(a => a.content) && {
+              attachment: attachments
+                .filter(a => a.content)
+                .map(a => ({ name: a.filename, content: a.content })),
             }),
           }),
         });
