@@ -51,16 +51,20 @@ app.post('/webhook', async (req, res) => {
       let content = null;
       if (a.id && RESEND_API_KEY) {
         try {
-          const r = await fetch(`https://api.resend.com/emails/${emailId}/attachments/${a.id}`, {
-            headers: { Authorization: `Bearer ${RESEND_API_KEY}` },
-          });
-          if (r.ok) {
-            const buf = await r.arrayBuffer();
-            content = Buffer.from(buf).toString('base64');
-            console.log(`📎 Fetched "${a.filename}" — ${buf.byteLength} bytes`);
-          } else {
-            console.warn(`📎 Failed to fetch "${a.filename}": ${r.status} ${await r.text()}`);
-          }
+          // Step 1: get the signed download_url for this attachment
+          const meta = await fetch(
+            `https://api.resend.com/emails/receiving/${emailId}/attachments/${a.id}`,
+            { headers: { Authorization: `Bearer ${RESEND_API_KEY}` } }
+          );
+          if (!meta.ok) throw new Error(`meta ${meta.status}: ${await meta.text()}`);
+          const { download_url } = await meta.json();
+
+          // Step 2: download the actual bytes from the signed URL
+          const file = await fetch(download_url);
+          if (!file.ok) throw new Error(`download ${file.status}`);
+          const buf = await file.arrayBuffer();
+          content = Buffer.from(buf).toString('base64');
+          console.log(`📎 Fetched "${a.filename}" — ${buf.byteLength} bytes`);
         } catch (e) {
           console.warn(`📎 Error fetching "${a.filename}": ${e.message}`);
         }
