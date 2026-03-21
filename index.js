@@ -6,20 +6,6 @@ const app = express();
 const receivedEmails = [];
 const MAX_EMAILS = 200;
 
-// Keywords that suggest a receipt or invoice
-const RECEIPT_KEYWORDS = [
-  'receipt', 'invoice', 'order confirmation', 'payment confirmation',
-  'your order', 'order #', 'order number', 'purchase confirmation',
-  'payment receipt', 'transaction', 'billing', 'statement',
-  'refund', 'subscription', 'renewal', 'thank you for your payment',
-  'thanks for your payment', 'payment received', 'your payment',
-];
-
-function isReceiptOrInvoice(email) {
-  const subject = (email.subject || '').toLowerCase();
-  const text = (email.text || '').toLowerCase();
-  return RECEIPT_KEYWORDS.some(kw => subject.includes(kw) || text.includes(kw));
-}
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -100,7 +86,7 @@ app.post('/webhook', async (req, res) => {
     const REVOLUT_EMAIL = process.env.REVOLUT_EMAIL;
     const SMTP_USER = process.env.SMTP_USER;
 
-    if (REVOLUT_EMAIL && SMTP_USER && isReceiptOrInvoice(emailRecord)) {
+    if (REVOLUT_EMAIL && SMTP_USER) {
       try {
         const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
@@ -130,8 +116,6 @@ app.post('/webhook', async (req, res) => {
       }
     } else if (!REVOLUT_EMAIL || !SMTP_USER) {
       console.warn('REVOLUT_EMAIL or SMTP_USER not set — forwarding skipped');
-    } else {
-      console.log(`⏭️  Skipped (not a receipt): "${subject}"`);
     }
 
     res.status(200).json({ ok: true });
