@@ -34,6 +34,7 @@ app.post('/webhook', async (req, res) => {
     // Each attachment has an `id` — fetch the actual bytes via the Resend API.
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
     const rawAttachments = event.data?.attachments || [];
+    console.log(`📬 "${subject}" — ${rawAttachments.length} attachment(s): ${rawAttachments.map(a => `${a.filename}(id:${a.id ?? 'NONE'})`).join(', ') || 'none'}`);
     const attachments = await Promise.all(rawAttachments.map(async a => {
       let content = null;
       if (a.id && RESEND_API_KEY) {
