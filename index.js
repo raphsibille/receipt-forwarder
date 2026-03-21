@@ -11,7 +11,8 @@ const RECEIPT_KEYWORDS = [
   'receipt', 'invoice', 'order confirmation', 'payment confirmation',
   'your order', 'order #', 'order number', 'purchase confirmation',
   'payment receipt', 'transaction', 'billing', 'statement',
-  'refund', 'subscription', 'renewal'
+  'refund', 'subscription', 'renewal', 'thank you for your payment',
+  'thanks for your payment', 'payment received', 'your payment',
 ];
 
 function isReceiptOrInvoice(email) {
