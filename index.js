@@ -39,23 +39,34 @@ app.post('/webhook', async (req, res) => {
     const to = event.data?.to || [];
     const receivedAt = event.data?.created_at || new Date().toISOString();
 
-    // Log top-level event.data keys for diagnostics
-    console.log(`📬 event.data keys: ${Object.keys(event.data || {}).join(', ')}`);
-
     // Extract email body and attachments from the webhook payload
     let html = event.data?.html || '';
     let text = event.data?.text || '';
-    // Resend provides attachments as [{ filename, content (base64), content_type }]
-    const attachments = (event.data?.attachments || []).map(a => {
-      const content = a.content;
-      console.log(`📎 Attachment full object keys: ${Object.keys(a).join(', ')}`);
-      console.log(`📎 Attachment raw: ${JSON.stringify(a).substring(0, 500)}`);
-      return {
-        filename: a.filename,
-        content,             // base64 (we hope — logging above will confirm)
-        contentType: a.mimeType || a.content_type,
-      };
-    });
+
+    // Resend does NOT include attachment content in the webhook payload.
+    // Each attachment has an `id` — fetch the actual bytes via the Resend API.
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    const rawAttachments = event.data?.attachments || [];
+    const attachments = await Promise.all(rawAttachments.map(async a => {
+      let content = null;
+      if (a.id && RESEND_API_KEY) {
+        try {
+          const r = await fetch(`https://api.resend.com/emails/${emailId}/attachments/${a.id}`, {
+            headers: { Authorization: `Bearer ${RESEND_API_KEY}` },
+          });
+          if (r.ok) {
+            const buf = await r.arrayBuffer();
+            content = Buffer.from(buf).toString('base64');
+            console.log(`📎 Fetched "${a.filename}" — ${buf.byteLength} bytes`);
+          } else {
+            console.warn(`📎 Failed to fetch "${a.filename}": ${r.status} ${await r.text()}`);
+          }
+        } catch (e) {
+          console.warn(`📎 Error fetching "${a.filename}": ${e.message}`);
+        }
+      }
+      return { filename: a.filename, content, contentType: a.content_type };
+    }));
 
     const emailRecord = {
       id: emailId,
