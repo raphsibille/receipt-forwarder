@@ -2,6 +2,27 @@ import express from 'express';
 
 const app = express();
 
+// ─── Notification helper ─────────────────────────────────────────────────────
+async function sendAlert(subject, body) {
+  const BREVO_API_KEY = process.env.BREVO_API_KEY;
+  const SMTP_USER = process.env.SMTP_USER;
+  if (!BREVO_API_KEY || !SMTP_USER) return;
+  try {
+    await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sender: { email: SMTP_USER, name: 'Receipt Forwarder' },
+        to: [{ email: SMTP_USER }],
+        subject: `⚠️ Receipt Forwarder: ${subject}`,
+        htmlContent: `<pre style="font-family:monospace;font-size:14px">${body}</pre>`,
+      }),
+    });
+  } catch (e) {
+    console.error('Failed to send alert:', e.message);
+  }
+}
+
 // In-memory store for received emails (persists while server is running)
 const receivedEmails = [];
 const MAX_EMAILS = 200;
@@ -34,8 +55,7 @@ app.post('/webhook', async (req, res) => {
     // Each attachment has an `id` — fetch the actual bytes via the Resend API.
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
     const rawAttachments = event.data?.attachments || [];
-    console.log(`📬 "${subject}" — ${rawAttachments.length} attachment(s): ${rawAttachments.map(a => `${a.filename}(id:${a.id ?? 'NONE'})`).join(', ') || 'none'}`);
-    const attachments = await Promise.all(rawAttachments.map(async a => {
+const attachments = await Promise.all(rawAttachments.map(async a => {
       let content = null;
       if (a.id && RESEND_API_KEY) {
         try {
@@ -55,6 +75,10 @@ app.post('/webhook', async (req, res) => {
           console.log(`📎 Fetched "${a.filename}" — ${buf.byteLength} bytes`);
         } catch (e) {
           console.warn(`📎 Error fetching "${a.filename}": ${e.message}`);
+          await sendAlert(
+            `Attachment fetch failed — "${subject}"`,
+            `Could not download attachment "${a.filename}" from Resend.\n\nError: ${e.message}\n\nEmail from: ${from}\nEmail ID: ${emailId}`
+          );
         }
       }
       return { filename: a.filename, content, contentType: a.content_type };
@@ -114,6 +138,10 @@ app.post('/webhook', async (req, res) => {
         console.log(`✅ Forwarded: "${subject}" to ${REVOLUT_EMAIL}`);
       } catch (e) {
         console.error('Failed to forward email:', e.message);
+        await sendAlert(
+          `Forward failed — "${subject}"`,
+          `Failed to forward email to Revolut.\n\nError: ${e.message}\n\nEmail from: ${from}\nSubject: ${subject}\nEmail ID: ${emailId}`
+        );
       }
     } else if (!REVOLUT_EMAIL || !SMTP_USER) {
       console.warn('REVOLUT_EMAIL or SMTP_USER not set — forwarding skipped');
@@ -122,6 +150,10 @@ app.post('/webhook', async (req, res) => {
     res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Webhook error:', err);
+    await sendAlert(
+      'Unexpected webhook error',
+      `An unexpected error occurred while processing an inbound email.\n\nError: ${err.message}\n\nStack: ${err.stack}`
+    );
     res.status(500).json({ error: err.message });
   }
 });
