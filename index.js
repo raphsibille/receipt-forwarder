@@ -39,13 +39,17 @@ app.post('/webhook', async (req, res) => {
     const to = event.data?.to || [];
     const receivedAt = event.data?.created_at || new Date().toISOString();
 
+    // Log top-level event.data keys for diagnostics
+    console.log(`📬 event.data keys: ${Object.keys(event.data || {}).join(', ')}`);
+
     // Extract email body and attachments from the webhook payload
     let html = event.data?.html || '';
     let text = event.data?.text || '';
     // Resend provides attachments as [{ filename, content (base64), content_type }]
     const attachments = (event.data?.attachments || []).map(a => {
       const content = a.content;
-      console.log(`📎 Attachment: "${a.filename}" | mimeType: ${a.mimeType || a.content_type} | size: ${a.size} | content type: ${typeof content} | content length: ${content?.length ?? 'null'} | first 80 chars: ${typeof content === 'string' ? content.substring(0, 80) : JSON.stringify(content)?.substring(0, 80)}`);
+      console.log(`📎 Attachment full object keys: ${Object.keys(a).join(', ')}`);
+      console.log(`📎 Attachment raw: ${JSON.stringify(a).substring(0, 500)}`);
       return {
         filename: a.filename,
         content,             // base64 (we hope — logging above will confirm)
