@@ -147,6 +147,48 @@ const attachments = await Promise.all(rawAttachments.map(async a => {
       console.warn('REVOLUT_EMAIL or SMTP_USER not set — forwarding skipped');
     }
 
+    // ─── Notes forwarding ──────────────────────────────────────────────────
+    const NOTES_EMAIL = process.env.NOTES_EMAIL;
+    const NOTES_WEBHOOK_URL = process.env.NOTES_WEBHOOK_URL;
+
+    const toAddresses = Array.isArray(to) ? to : [to];
+    const isNoteEmail = NOTES_EMAIL && toAddresses.some(
+      addr => addr.toLowerCase().includes(NOTES_EMAIL.toLowerCase())
+    );
+
+    if (!isNoteEmail && NOTES_EMAIL) {
+      console.log(`📝 Notes check: no match (to=[${toAddresses.join(', ')}], NOTES_EMAIL=${NOTES_EMAIL})`);
+    }
+
+    if (isNoteEmail) {
+      if (!NOTES_WEBHOOK_URL) {
+        console.warn('NOTES_WEBHOOK_URL not set — notes forwarding skipped');
+      } else {
+        try {
+          const notesRes = await fetch(NOTES_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              title: subject,
+              from,
+              receivedAt,
+              text: text || null,
+              html: html || null,
+            }),
+          });
+          if (!notesRes.ok) throw new Error(await notesRes.text());
+          emailRecord.noteSaved = true;
+          console.log(`📝 Note saved: "${subject}"`);
+        } catch (e) {
+          console.error('Failed to save note:', e.message);
+          await sendAlert(
+            `Notes webhook failed — "${subject}"`,
+            `Failed to POST note to ${NOTES_WEBHOOK_URL}.\n\nError: ${e.message}\n\nEmail from: ${from}\nSubject: ${subject}\nEmail ID: ${emailId}`
+          );
+        }
+      }
+    }
+
     res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Webhook error:', err);
@@ -162,7 +204,7 @@ const attachments = await Promise.all(rawAttachments.map(async a => {
 app.get('/', (req, res) => {
   const rows = receivedEmails.map(e => `
     <tr onclick="loadEmail('${e.id}')" style="cursor:pointer" class="row" id="row-${e.id}">
-      <td>${e.forwarded ? '✅' : '—'}</td>
+      <td>${e.forwarded ? '✅' : e.noteSaved ? '📝' : '—'}</td>
       <td>${escHtml(e.from)}</td>
       <td>${escHtml(e.subject)}</td>
       <td>${new Date(e.receivedAt).toLocaleString()}</td>
@@ -218,7 +260,7 @@ app.get('/', (req, res) => {
     </div>
   </div>
   <script>
-    const emails = ${JSON.stringify(receivedEmails.map(e => ({ id: e.id, messageId: e.messageId, subject: e.subject, from: e.from, to: e.to, receivedAt: e.receivedAt, forwarded: e.forwarded, html: e.html, text: e.text })))};
+    const emails = ${JSON.stringify(receivedEmails.map(e => ({ id: e.id, messageId: e.messageId, subject: e.subject, from: e.from, to: e.to, receivedAt: e.receivedAt, forwarded: e.forwarded, noteSaved: e.noteSaved, html: e.html, text: e.text })))};
     function escHtml(s) {
       return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
@@ -235,7 +277,7 @@ app.get('/', (req, res) => {
           <strong>To:</strong> \${escHtml((e.to||[]).join(', '))}<br/>
           <strong>Subject:</strong> \${escHtml(e.subject)}<br/>
           <strong>Date:</strong> \${new Date(e.receivedAt).toLocaleString()}<br/>
-          <strong>Forwarded:</strong> \${e.forwarded ? '<span class="badge badge-fwd">Yes ✅</span>' : '<span class="badge badge-skip">No</span>'}<br/>
+          <strong>Routed:</strong> \${e.forwarded ? '<span class="badge badge-fwd">Receipt ✅</span>' : e.noteSaved ? '<span class="badge badge-fwd">Note 📝</span>' : '<span class="badge badge-skip">—</span>'}<br/>
           <strong>Email ID:</strong> <code style="font-size:0.75rem">\${escHtml(e.id||'')}</code>
         </div>
         \${e.html
@@ -292,10 +334,41 @@ app.get('/test-email', async (req, res) => {
   }
 });
 
+// ─── Notes webhook test endpoint ─────────────────────────────────────────────
+app.get('/test-notes', async (req, res) => {
+  const NOTES_WEBHOOK_URL = process.env.NOTES_WEBHOOK_URL;
+  const NOTES_EMAIL       = process.env.NOTES_EMAIL;
+
+  if (!NOTES_WEBHOOK_URL) {
+    return res.status(500).json({ error: 'NOTES_WEBHOOK_URL not set' });
+  }
+
+  try {
+    const r = await fetch(NOTES_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title:      'Test note from Receipt Forwarder',
+        from:       'test@receipt-forwarder',
+        receivedAt: new Date().toISOString(),
+        text:       'This is a test note sent from the /test-notes endpoint.',
+        html:       null,
+      }),
+    });
+    const body = await r.text();
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${body}`);
+    res.json({ ok: true, notes_email: NOTES_EMAIL || '(not set)', webhook_url: NOTES_WEBHOOK_URL, response: body });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Receipt Forwarder running on port ${PORT}`);
-  console.log(`   SMTP_USER:      ${process.env.SMTP_USER || '(not set)'}`);
-  console.log(`   REVOLUT_EMAIL:  ${process.env.REVOLUT_EMAIL || '(not set)'}`);
-  console.log(`   SMTP_PASS:      ${process.env.SMTP_PASS ? '(set)' : '(not set)'}`);
+  console.log(`   SMTP_USER:         ${process.env.SMTP_USER      || '(not set)'}`);
+  console.log(`   REVOLUT_EMAIL:     ${process.env.REVOLUT_EMAIL  || '(not set)'}`);
+  console.log(`   SMTP_PASS:         ${process.env.SMTP_PASS      ? '(set)' : '(not set)'}`);
+  console.log(`   NOTES_EMAIL:       ${process.env.NOTES_EMAIL    || '(not set)'}`);
+  console.log(`   NOTES_WEBHOOK_URL: ${process.env.NOTES_WEBHOOK_URL || '(not set)'}`);
 });
