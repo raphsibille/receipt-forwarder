@@ -50,6 +50,7 @@ app.post('/webhook', async (req, res) => {
     // Extract email body and attachments from the webhook payload
     let html = event.data?.html || '';
     let text = event.data?.text || '';
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
     // Resend sometimes omits body content from the webhook for forwarded emails.
     // If both are empty, fetch the full email via the API.
@@ -74,7 +75,6 @@ app.post('/webhook', async (req, res) => {
 
     // Resend does NOT include attachment content in the webhook payload.
     // Each attachment has an `id` — fetch the actual bytes via the Resend API.
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
     const rawAttachments = event.data?.attachments || [];
 const attachments = await Promise.all(rawAttachments.map(async a => {
       let content = null;
