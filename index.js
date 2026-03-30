@@ -51,6 +51,27 @@ app.post('/webhook', async (req, res) => {
     let html = event.data?.html || '';
     let text = event.data?.text || '';
 
+    // Resend sometimes omits body content from the webhook for forwarded emails.
+    // If both are empty, fetch the full email via the API.
+    if (!html && !text && emailId && RESEND_API_KEY) {
+      try {
+        const emailRes = await fetch(
+          `https://api.resend.com/emails/receiving/${emailId}`,
+          { headers: { Authorization: `Bearer ${RESEND_API_KEY}` } }
+        );
+        if (emailRes.ok) {
+          const emailData = await emailRes.json();
+          html = emailData.html || '';
+          text = emailData.text || '';
+          console.log(`📧 Fetched email body from Resend API (html=${!!html}, text=${!!text})`);
+        } else {
+          console.warn(`📧 Failed to fetch email body: ${emailRes.status}`);
+        }
+      } catch (e) {
+        console.warn(`📧 Error fetching email body: ${e.message}`);
+      }
+    }
+
     // Resend does NOT include attachment content in the webhook payload.
     // Each attachment has an `id` — fetch the actual bytes via the Resend API.
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
